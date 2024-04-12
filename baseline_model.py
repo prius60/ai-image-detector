@@ -19,7 +19,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = model.to(device)
 
 # Load dataset and split into train and val sets
-dataset = torchvision.datasets.ImageFolder('F:\\pixiv_transformed', transform=transform)
+# Assume that the images are stored in 'pixiv_transformed'
+dataset = torchvision.datasets.ImageFolder('pixiv_transformed', transform=transform)
 # dataset = torch.utils.data.Subset(dataset, random.sample(range(len(dataset)), 1000))
 train_size = int(0.8 * len(dataset))
 val_size = int(0.1 * len(dataset))
