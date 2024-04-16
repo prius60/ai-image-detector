@@ -1,9 +1,13 @@
 import torch
 from torchvision import transforms, datasets, models
 from torch.utils.data import DataLoader
+from ViT_model import ViTModel
+from ViT_Res import ViT_Res
 import os
 import glob
+from transformers import CLIPProcessor, CLIPModel
 
+    
 def find_all_val_dirs(root_dir):
     """Find all 'val' directories within the root directory."""
     return glob.glob(os.path.join(root_dir, '**/val'), recursive=True)
@@ -64,7 +68,21 @@ def evaluate_resnet(root_dir, model_path):
     model = model.to(device)
     evaluate(root_dir, model, device)
     
-    
+def evaluateViT(root_dir, model_path):
+    # Load the model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = ViTModel()
+    model.load_state_dict(torch.load(model_path))
+    model = model.to(device)
+    evaluate(root_dir, model, device)
+
+def evaluateViT_Res(root_dir, model_path):
+    # Load the model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = ViT_Res()
+    model.load_state_dict(torch.load(model_path))
+    model = model.to(device)
+    evaluate(root_dir, model, device)
 
 
     
@@ -73,7 +91,7 @@ def evaluate_resnet(root_dir, model_path):
 # model_path = 'baseline_model.pth'
 # evaluate_resnet(root_directory, model_path)
 
-def evaluate_all_models(root_directory, models_directory):
+def evaluate_all_ViT(root_directory, models_directory):
     # List all files in the models directory
     model_files = [f for f in os.listdir(models_directory) if f.endswith('.pth')]
     
@@ -81,7 +99,17 @@ def evaluate_all_models(root_directory, models_directory):
     for model_file in model_files:
         model_path = os.path.join(models_directory, model_file)
         print(f"Evaluating model: {model_path}")
-        evaluate_resnet(root_directory, model_path)
+        evaluateViT(root_directory, model_path)
+
+def evaluate_all_ViT_Res(root_directory, models_directory):
+    # List all files in the models directory
+    model_files = [f for f in os.listdir(models_directory) if f.endswith('.pth')]
+    
+    # Loop through each model file and evaluate it
+    for model_file in model_files:
+        model_path = os.path.join(models_directory, model_file)
+        print(f"Evaluating model: {model_path}")
+        evaluateViT_Res(root_directory, model_path)
 
 # # Example usage
 # root_directory = 'resized_images'
