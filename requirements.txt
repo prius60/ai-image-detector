@@ -3,3 +3,4 @@ torchvision
 tqdm
 transformers
 scikit-learn
+opencv-python

@@ -3,8 +3,10 @@ import torchvision
 from eval import *
 import torch.nn as nn
 import random
-from PIL import ImageFilter
+from PIL import ImageFilter, Image
 from transformers import CLIPModel
+import cv2
+import numpy as np
 
 
 class RandomGaussianBlur:
@@ -16,6 +18,25 @@ class RandomGaussianBlur:
             sigma = random.uniform(0.1, 2.0)
             return img.filter(ImageFilter.GaussianBlur(radius=sigma))
         return img
+    
+
+class HighPassFilter:
+    def __init__(self):
+        self.kernel = np.array([[-0.11785113, -0.11785113, -0.11785113],
+            [-0.11785113,  0.94280904, -0.11785113],
+            [-0.11785113, -0.11785113, -0.11785113]]) # Normalized high-pass filter kernel
+
+    def __call__(self, img):
+        # Split the image into its color channels
+        img = np.array(img)
+        channels = cv2.split(img)
+
+        # Apply the high-pass filter to each channel
+        filtered_channels = [cv2.filter2D(ch, -1, self.kernel) for ch in channels]
+
+        # Merge the channels back together
+        filtered_image = cv2.merge(filtered_channels)
+        return filtered_image
 
 
 class ViT_EfficientNet(nn.Module):
@@ -25,18 +46,18 @@ class ViT_EfficientNet(nn.Module):
         self.efficientnet = torchvision.models.efficientnet_b4(weights=torchvision.models.EfficientNet_B4_Weights.DEFAULT)
 
         # Customize transformation
-        # Add random Gaussian blur, random grayscale, and random horizontal flip to help with generalization
-        self.transform = transforms.Compose([
+        self.transforms = transforms.Compose([
             transforms.RandomResizedCrop(224),     # Crop the center of the image
             RandomGaussianBlur(p=0.02),            # Apply random Gaussian blur
             transforms.RandomGrayscale(p=0.05),    # Apply random grayscale
             transforms.RandomHorizontalFlip(p=0.03),  # Apply random horizontal flip
+            HighPassFilter(),                      # Apply high-pass filter
             transforms.ToTensor(),          # Convert the image to a tensor
             transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],  # CLIP's specific normalization values
                                 std=[0.26862954, 0.26130258, 0.27577711])
             ])
             
-        
+         
         # Project both outputs to the same dimension, here chosen as 128 for example
         self.efficientnet.classifier = nn.Sequential(
             nn.Dropout(p=0.4, inplace=True),
