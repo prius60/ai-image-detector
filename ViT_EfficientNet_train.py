@@ -62,6 +62,9 @@ def train_model(model, train_data, val_data, criterion, optimizer, num_epochs=5,
 
 def train_on_dataset(save_path, dataset_path, criterion, num_epochs=5, model_path=None):
     print(f"=== Training on {save_path} ===")
+    # Create weights folder if it doesn't exist yet
+    if not os.path.exists(os.path.dirname(save_path)):
+        os.makedirs(os.path.dirname(save_path))
     model = ViT_EfficientNet()  # Assuming ViTModel is already defined.
     if model_path is not None:
         model.load_state_dict(torch.load(model_path))  
