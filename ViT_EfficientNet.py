@@ -24,6 +24,11 @@ class ViT_EfficientNet(nn.Module):
         for param in self.ViT.parameters():
             param.requires_grad = False
 
+        # Freeze EfficientNet parameters
+        # Uncomment if you want to freeze EfficientNet parameters
+        for param in self.efficientnet.features.parameters():
+            param.requires_grad = False
+
         # Using nn.ModuleList to hold multiple attention layers
         self.attention_layers = nn.ModuleList([
             nn.MultiheadAttention(embed_dim=256, num_heads=n_heads) for _ in range(n_layers)
