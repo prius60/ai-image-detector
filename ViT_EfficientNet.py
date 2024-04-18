@@ -2,8 +2,20 @@ import torch
 import torchvision
 from eval import *
 import torch.nn as nn
-
+import random
+from PIL import ImageFilter
 from transformers import CLIPModel
+
+
+class RandomGaussianBlur:
+    def __init__(self, p=0.01):
+        self.p = p
+
+    def __call__(self, img):
+        if random.random() < self.p:
+            sigma = random.uniform(0.1, 2.0)
+            return img.filter(ImageFilter.GaussianBlur(radius=sigma))
+        return img
 
 
 class ViT_EfficientNet(nn.Module):
@@ -11,6 +23,19 @@ class ViT_EfficientNet(nn.Module):
         super(ViT_EfficientNet, self).__init__()
         self.ViT = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
         self.efficientnet = torchvision.models.efficientnet_b4(weights=torchvision.models.EfficientNet_B4_Weights.DEFAULT)
+
+        # Customize transformation
+        # Add random Gaussian blur, random grayscale, and random horizontal flip to help with generalization
+        self.transform = transforms.Compose([
+            transforms.RandomResizedCrop(224),     # Crop the center of the image
+            RandomGaussianBlur(p=0.02),            # Apply random Gaussian blur
+            transforms.RandomGrayscale(p=0.05),    # Apply random grayscale
+            transforms.RandomHorizontalFlip(p=0.03),  # Apply random horizontal flip
+            transforms.ToTensor(),          # Convert the image to a tensor
+            transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],  # CLIP's specific normalization values
+                                std=[0.26862954, 0.26130258, 0.27577711])
+            ])
+            
         
         # Project both outputs to the same dimension, here chosen as 128 for example
         self.efficientnet.classifier = nn.Sequential(
