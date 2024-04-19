@@ -12,6 +12,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
+import random
 
     
 def find_all_val_dirs(root_dir):
@@ -21,6 +22,7 @@ def find_all_val_dirs(root_dir):
 def load_data(val_dir, transform, batch_size=64):
     """Load validation data from a given directory."""
     dataloader = datasets.ImageFolder(val_dir, transform=transform)
+    # dataloader = torch.utils.data.Subset(dataloader, random.sample(range(len(dataloader)), 1000))
     dataloader = DataLoader(dataloader, batch_size=batch_size, shuffle=False)
     return dataloader
 
@@ -130,12 +132,7 @@ def evaluateViT_EfficientNet(root_dir, model_path):
     model = ViT_EfficientNet()
     model.load_state_dict(torch.load(model_path))
     model = model.to(device)
-    transform = transforms.Compose([
-    transforms.CenterCrop(224),     # Crop the center of the image
-    transforms.ToTensor(),          # Convert the image to a tensor
-    transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],  # CLIP's specific normalization values
-                         std=[0.26862954, 0.26130258, 0.27577711])
-    ])
+    transform = model.transforms
     evaluate(root_dir, model, device, transform)
 
 
