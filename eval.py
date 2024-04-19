@@ -82,6 +82,12 @@ def evaluate_baseline_model(root_dir, model_path):
     transform = model.transforms
     evaluate(root_dir, model, device, transform)
 
+def evaluate_pixiv(model, device, transform):
+    dataloader =  datasets.ImageFolder('pixiv_transformed', transform=transform)
+    dataloader = torch.utils.data.DataLoader(dataloader, batch_size=64, shuffle=False)
+    accuracy = evaluate_dir(model, dataloader, device)
+    print(f"Accuracy for pixiv_transformed: {accuracy:.2f}%")
+
 def evaluate_resnet(root_dir, model_path):
     # Load the model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

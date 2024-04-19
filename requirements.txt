@@ -1,6 +1,11 @@
 torch
 torchvision
 tqdm
+<<<<<<< HEAD
+mamba_ssm
+timm
+=======
 transformers
 scikit-learn
 opencv-python
+>>>>>>> 8043e8723f8f91377d5734614902fa4848c2ecf6

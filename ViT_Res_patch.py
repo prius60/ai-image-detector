@@ -11,25 +11,20 @@ import torch.nn as nn
 
 from transformers import CLIPProcessor, CLIPModel
 
-def extract_random_patch(image, min_size=3, max_size=10):
-    
+def extract_random_patch(image, min_size=3, max_size=32):
     # Image dimensions
     B, C, H, W = image.shape
-
     # Choose a random size for the patch
     patch_size = random.randint(min_size, max_size)
-
     # Randomly choose the top-left corner of the patch
     if H - patch_size > 0:
         top = random.randint(0, H - patch_size)
     else:
         top = 0
-
     if W - patch_size > 0:
         left = random.randint(0, W - patch_size)
     else:
         left = 0
-
     # Extract the patch
     patch = image[:, :, top:top + patch_size, left:left + patch_size]
 
@@ -70,7 +65,16 @@ class ViT_Res_patch(nn.Module):
         
 
         # Extract random patches from the input image
-        patchs = [extract_random_patch(images_tensor) for _ in range(6)]
+        patchs = [extract_random_patch(images_tensor) for _ in range(16)]
+
+        # Divide the image into 16 patches
+        # patchs = []
+        # for i in range(4):
+        #     for j in range(4):
+        #         patch = images_tensor[:, :, i*56:(i+1)*56, j*56:(j+1)*56]
+        #         patchs.append(patch)
+
+
         # resize the patches to 224x224
         patchs = [torch.nn.functional.interpolate(patch, size=(224, 224)) for patch in patchs]
         # pass the patches through the resnet
