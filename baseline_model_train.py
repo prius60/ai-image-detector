@@ -125,7 +125,17 @@ def train_on_all_dataset(save_path, dataset_paths, criterion, num_epochs=5, mode
     return
 
 
+# Train on all GenImage datasets
 path = ['resized_images/imagenet_ai_0419_biggan', 'resized_images/imagenet_ai_0419_sdv4', 'resized_images/imagenet_ai_0424_wukong', 'resized_images/imagenet_ai_0419_vqdm', \
         'resized_images/imagenet_glide', 'resized_images/imagenet_ai_0508_adm', 'resized_images/imagenet_ai_0424_sdv5', 'resized_images/imagenet_midjourney']
 train_on_all_dataset('./baseline_model.pth', path, criterion, num_epochs=1)
+
+# Evaluate on GenImage's validation datasets
 evaluate_baseline_model('resized_images', './baseline_model.pth')
+
+# Evaluate on the Pixiv dataset
+model = BaselineModel()
+model.load_state_dict(torch.load('./baseline_model.pth'))
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = model.to(device)
+evaluate_pixiv(model, device, transform=BaselineModel().transforms)
