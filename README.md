@@ -9,3 +9,13 @@
 python baseline_model_train.py
 ```
 Examples to evaluate the models are outlined at the bottom of ***baseline_model_train.py***
+
+## To train our final models
+```bash
+python ViT_Res_patch_train.py
+```
+By default, we train with extracting 9 random patches. To change the number of patches, add ```--num_patches``` to specify
+Examples to evaluate the models are outlined at the bottom of ***ViT_Res_patch_train.py***
+
+## Methods to evaluate each model
+```eval.py``` contains helper methods to evaluate our models.
