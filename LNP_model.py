@@ -7,18 +7,28 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from PIL import Image
 from tqdm import tqdm
-import os
-import glob
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
+import glob
+import os
 
-##################################################################################################
+# Use CUDA for acceleration if possible
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
+# Transformations
+transform = transforms.Compose([
+    transforms.Resize((256, 256)),
+    transforms.ToTensor(),
+])
 
+# Model Architecture
 class DenoiseNet(nn.Module):
+    """ Network for detecting noise.
+    """
     def __init__(self):
         super(DenoiseNet, self).__init__()
-        # Define a high-pass filter to enhance high-frequency components
+        # High-pass filter to enhance high-frequency components
         self.high_pass_filter = nn.Conv2d(3, 3, kernel_size=3, padding=1, groups=3, bias=False)
         high_pass_kernel = torch.tensor([[[-1, -1, -1],
                                           [-1, 8, -1],
@@ -42,14 +52,14 @@ class DenoiseNet(nn.Module):
         x = self.pool(self.relu(self.conv3(x)))
         return x
 
-
-# LNP Model integrating DenoiseNet
 class LNPModel(nn.Module):
+    """ LNP Model integrating DenoiseNet.
+    """
     def __init__(self, denoise_net):
         super(LNPModel, self).__init__()
         self.denoise_net = denoise_net
         self.classifier = nn.Sequential(
-            nn.Linear(64 * 32 * 32, 512),  # Adjust the size according to your output
+            nn.Linear(64 * 32 * 32, 512),
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(512, 2),
@@ -65,6 +75,8 @@ class LNPModel(nn.Module):
 
 # Dataset preparation
 class ImageDataset(Dataset):
+    """ Organize and label the data accordingly.
+    """
     def __init__(self, root_dir, transform=None):
         self.root_dir = root_dir
         self.real_images = [os.path.join(root_dir, 'nature', x) for x in os.listdir(os.path.join(root_dir, 'nature'))]
@@ -85,9 +97,13 @@ class ImageDataset(Dataset):
             image = self.transform(image)
 
         return image, label
-    
 
-##################################################################################################
+def load_data(directory):
+    """ Load the data and create batches.
+    """
+    dataset = ImageDataset(root_dir=directory, transform=transform)
+    loader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
+    return loader
 
 
 def find_all_val_dirs(root_dir):
@@ -95,15 +111,11 @@ def find_all_val_dirs(root_dir):
     return glob.glob(os.path.join(root_dir, '**/val'), recursive=True)
 
 
-# Data Loading
-def load_data(directory):
-    dataset = ImageDataset(root_dir=directory, transform=transform)
-    loader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
-    return loader
-
-
-# Training Function
+# Training
 def train_model(loader, val_loader, model, criterion, optimizer, num_epochs=10):
+    """ Train the model based on the specific parameters and calculate the training
+    and validation accuracies after each epoch.
+    """
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
@@ -126,7 +138,7 @@ def train_model(loader, val_loader, model, criterion, optimizer, num_epochs=10):
         train_accuracy = 100 * correct_train / total_train
 
         # Validation Phase
-        model.eval()  # Ensure the model is in evaluation mode
+        model.eval()
         correct_val = 0
         total_val = 0
         with torch.no_grad():
@@ -138,12 +150,58 @@ def train_model(loader, val_loader, model, criterion, optimizer, num_epochs=10):
                 correct_val += (predicted == labels).sum().item()
 
         val_accuracy = 100 * correct_val / total_val
-        print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}, Training Accuracy: {train_accuracy}%, Validation Accuracy: {val_accuracy}%')
-        model.train()  # Switch back to training mode
+        print(f'Epoch {epoch+1}/{num_epochs}, Loss: {(running_loss/len(loader)):.4f}, Training Accuracy: {train_accuracy:.2f}%, Validation Accuracy: {val_accuracy:.2f}%')
+        model.train()
+
+def train_models(datasets):
+    """ Train one model for each corresponding dataset.
+    """
+    for dataset in datasets:
+        # Setup Model
+        denoise_net = DenoiseNet().to(device)
+        lnp_model = LNPModel(denoise_net=denoise_net).to(device)
+        optimizer = optim.Adam(lnp_model.parameters(), lr=0.001)
+        criterion = nn.CrossEntropyLoss()
+
+        # Setup Datasets
+        train_loader = load_data(f'resized_images/imagenet_{dataset}/train')
+        val_loader = load_data(f'resized_images/imagenet_{dataset}/val')
+
+        # Train The Model
+        train_model(train_loader, val_loader, lnp_model, criterion, optimizer)
+
+        # Save only the state dictionary
+        print("=== Saving model weights...===")
+        torch.save(lnp_model.state_dict(), f'lnp_model_{dataset}.pth')
+        print("=== Model weights saved ===")
+
+def train_model_all_datasets(datasets):
+    """ Train one model on all of the datasets.
+    """
+    # Setup Model
+    denoise_net = DenoiseNet().to(device)
+    lnp_model = LNPModel(denoise_net=denoise_net).to(device)
+    optimizer = optim.Adam(lnp_model.parameters(), lr=0.001)
+    criterion = nn.CrossEntropyLoss()
+
+    for dataset in datasets:
+        # Setup Datasets
+        train_loader = load_data(f'resized_images/imagenet_{dataset}/train')
+        val_loader = load_data(f'resized_images/imagenet_{dataset}/val')
+
+        # Train The Model
+        train_model(train_loader, val_loader, lnp_model, criterion, optimizer)
+
+    # Save only the state dictionary
+    print("=== Saving model weights...===")
+    torch.save(lnp_model.state_dict(), f'lnp_model_all.pth')
+    print("=== Model weights saved ===")
 
 
 # Evaluate the model on the validation data
 def evaluate_dir(model, dataloader, device):
+    """ Evaluate the model on the given data.
+    """
     model.eval()
     correct = 0
     total = 0
@@ -159,19 +217,22 @@ def evaluate_dir(model, dataloader, device):
             label_list.extend(labels.cpu().numpy())
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+
     accuracy = 100 * correct / total
     ruc = roc_auc_score(label_list, predictions)
     ap = average_precision_score(label_list, predictions)
     print(f"ROC AUC: {ruc:.2f}")
     print(f"Average Precision: {ap:.2f}")
-    # print(f"Confusion Matrix: {confusion_matrix(label_list, predictions)}")
+ 
     return accuracy
 
-
 def evaluate(root_dir, model, device):
+    """ Evaluate the model on each validation set.
+    """
     # Find all validation directories
     val_dirs = find_all_val_dirs(root_dir)
     total_accuracy = 0
+
     # Evaluate model on each validation directory
     for val_dir in val_dirs:
         print(f"Evaluating on {val_dir}")
@@ -179,12 +240,14 @@ def evaluate(root_dir, model, device):
         accuracy = evaluate_dir(model, dataloader, device)
         print(f"Accuracy for {val_dir}: {accuracy:.2f}%")
         total_accuracy += accuracy
+
     # report total accuracy
     total_accuracy = total_accuracy / len(val_dirs)
     print(f"Total accuracy: {total_accuracy:.2f}%")
 
-
 def evaluateLNP_model(root_dir, model_path):
+    """ Evaluate the model using the saved weights.
+    """
     # Load the model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     denoise_net = DenoiseNet()
@@ -194,8 +257,9 @@ def evaluateLNP_model(root_dir, model_path):
     model = model.to(device)
     evaluate(root_dir, model, device)
 
-
 def evaluate_all_LNP_models(root_directory, models_directory):
+    """ Evaluate each model we have already trained.
+    """
     # List all files in the models directory
     model_files = [f for f in os.listdir(models_directory) if f.endswith('.pth')]
 
@@ -206,52 +270,18 @@ def evaluate_all_LNP_models(root_directory, models_directory):
         evaluateLNP_model(root_directory, model_path)
 
 
-##################################################################################################
-
-
-# Transformations
-transform = transforms.Compose([
-    transforms.Resize((256, 256)),
-    transforms.ToTensor(),
-])
-
-# Model, Loss, and Optimizer
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-criterion = nn.CrossEntropyLoss()
-
-
-##################################################################################################
-
-
 if __name__ == '__main__':
-    # # Datasets
-    # datasets = ['ai_0419_biggan', 'ai_0419_sdv4', 'ai_0419_vqdm', 'ai_0424_sdv5',
-    #             'ai_0424_wukong', 'ai_0508_adm', 'glide', 'midjourney']
+    # Datasets
+    datasets = ['ai_0419_biggan', 'ai_0419_sdv4', 'ai_0419_vqdm', 'ai_0424_sdv5',
+                'ai_0424_wukong', 'ai_0508_adm', 'glide', 'midjourney']
 
-    # for dataset in datasets:
-    #     # Setup Model
-    #     denoise_net = DenoiseNet().to(device)
-    #     lnp_model = LNPModel(denoise_net=denoise_net).to(device)
-    #     optimizer = optim.Adam(lnp_model.parameters(), lr=0.001)
+    # Training
+    # train_models(datasets)  # Train one model for each dataset
+    # train_model_all_datasets(datasets) # Train a model for all datasets
 
-    #     # Setup Datasets
-    #     train_loader = load_data(f'resized_images/imagenet_{dataset}/train')
-    #     val_loader = load_data(f'resized_images/imagenet_{dataset}/val')
+    # # Evaluation
+    # root_directory = 'resized_images'
+    # models_directory = './'
+    # evaluate_all_LNP_models(root_directory, models_directory)
 
-    #     # Train The Model
-    #     train_model(train_loader, val_loader, lnp_model, criterion, optimizer)
-
-    #     # Save only the state dictionary
-    #     print("=== Saving model weights...===")
-    #     torch.save(lnp_model.state_dict(), f'lnp_model_{dataset}.pth')
-    #     print("=== Model weights saved ===")
-
-        # # Later to load the state dictionary into the model’s architecture
-        # model = LNPModel(denoise_net=DenoiseNet())  # Recreate the model structure
-        # model.load_state_dict(torch.load('lnp_model.pth'))
-        # model.eval()  # Set the model to evaluation mode
-
-    
-    root_directory = 'resized_images'
-    models_directory = './'
-    evaluate_all_LNP_models(root_directory, models_directory)
+    evaluateLNP_model('resized_images', 'lnp_model_all.pth')
