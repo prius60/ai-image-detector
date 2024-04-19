@@ -32,8 +32,9 @@ def extract_random_patch(image, min_size=3, max_size=32):
 
 
 class ViT_Res_patch(nn.Module):
-    def __init__(self, n_layers=3, n_heads=4):
+    def __init__(self, n_layers=3, n_heads=4, num_patches=9):
         super(ViT_Res_patch, self).__init__()
+        self.num_patches = num_patches
         self.ViT = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
         self.resnet = torchvision.models.resnet50(pretrained=True)
         
@@ -41,8 +42,7 @@ class ViT_Res_patch(nn.Module):
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, 128)
         self.ViT_fc = nn.Linear(768, 128)
 
-        # Freeze CLIP ViT model parameters
-        # Uncomment if you want to freeze ViT parameters
+        # Freeze CLIP ViT and ResNet model parameters
         for param in self.ViT.parameters():
             param.requires_grad = False
         for param in self.resnet.parameters():
@@ -65,15 +65,7 @@ class ViT_Res_patch(nn.Module):
         
 
         # Extract random patches from the input image
-        patchs = [extract_random_patch(images_tensor) for _ in range(16)]
-
-        # Divide the image into 16 patches
-        # patchs = []
-        # for i in range(4):
-        #     for j in range(4):
-        #         patch = images_tensor[:, :, i*56:(i+1)*56, j*56:(j+1)*56]
-        #         patchs.append(patch)
-
+        patchs = [extract_random_patch(images_tensor) for _ in range(self.num_patches)]
 
         # resize the patches to 224x224
         patchs = [torch.nn.functional.interpolate(patch, size=(224, 224)) for patch in patchs]
@@ -87,19 +79,6 @@ class ViT_Res_patch(nn.Module):
         attention_out = combined_features
         for attn_layer in self.attention_layers:
             attention_out, _ = attn_layer(attention_out, attention_out, attention_out)
-
-
-        
-        # Prepare for attention layer processing
-        # MultiheadAttention expects (L, N, E) format, where L is the sequence length (1 in this case), N is batch size
-
-        # Apply each attention layer sequentially
-        # vit_outputs = vit_outputs.unsqueeze(0)
-        # res_outputs = res_outputs.unsqueeze(0)
-        # attention_out = torch.cat([vit_outputs, res_outputs], dim=0)
-        # for attn_layer in self.attention_layers:
-        #     attention_out, _ = attn_layer(attention_out, attention_out, attention_out)
-
         
         # Apply final linear layer
         out = attention_out.transpose(0, 1)
@@ -110,6 +89,6 @@ class ViT_Res_patch(nn.Module):
 
 # Example usage:
 # images_tensor = torch.randn(1, 3, 224, 224)  # Example image tensor
-# model = ViT_Res()
+# model = ViT_Res_patch()
 # output = model(images_tensor)
 # print(output.shape)

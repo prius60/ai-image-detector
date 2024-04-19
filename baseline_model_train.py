@@ -145,7 +145,7 @@ train_on_dataset('baseline_model/biggan_model.pth', 'resized_images/imagenet_ai_
 
 # Evaluate on the Pixiv dataset (only the model trained on all GenImage datasets, in this case)
 # model = BaselineModel()
-# model.load_state_dict(torch.load('baseline_model/baseline_model.pth'))
+# model.load_state_dict(torch.load('baseline_model/all_models.pth'))
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # model = model.to(device)
 # evaluate_pixiv(model, device, transform=BaselineModel().transforms)

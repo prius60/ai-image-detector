@@ -1,27 +1,26 @@
 import torch
 import torchvision
-from torchvision.datasets import ImageFolder
-from torchvision.transforms import Compose, Resize, ToTensor, Normalize
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-import random
 import os
 from eval import *
 from torch.utils.data import ConcatDataset
 from ViT_Res_patch import ViT_Res_patch
-from transformers import CLIPProcessor, CLIPModel
-# Set seed for reproducibility
-# random.seed(12450)
+import argparse
 
 
 # Use CUDA for acceleration if possible
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-
-
 # Define loss function and optimizer
 criterion = torch.nn.BCEWithLogitsLoss()
+
+# Define number of patches from command line argument
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('num_patches', type=int, help='The number of patches to use')
+args = parser.parse_args()
+num_patches = args.num_patches if args.num_patches is not None else 9
 
 # Define accuracy function
 def accuracy(model, dataset, max_batches=None):
@@ -39,8 +38,12 @@ def accuracy(model, dataset, max_batches=None):
                 break
     return correct / total
 
+
 # Training loop
 def train_model(model, train_data, val_data, criterion, optimizer, num_epochs=5, save_path=None):
+    # Create weights folder if it doesn't exist yet
+    if not os.path.exists(os.path.dirname(save_path)):
+        os.makedirs(os.path.dirname(save_path))
     train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
     for epoch in range(num_epochs):
         model.train()
@@ -63,9 +66,13 @@ def train_model(model, train_data, val_data, criterion, optimizer, num_epochs=5,
             torch.save(model.state_dict(), save_path)
     return model
 
+
 def train_on_dataset(save_path, dataset_path, criterion, num_epochs=5, model_path=None):
     print(f"=== Training on {save_path} ===")
-    model = ViT_Res_patch()  # Assuming ViTModel is already defined.
+    # Create weights folder if it doesn't exist yet
+    if not os.path.exists(os.path.dirname(save_path)):
+        os.makedirs(os.path.dirname(save_path))
+    model = ViT_Res_patch(num_patches=num_patches)  # Assuming ViTModel is already defined.
     if model_path is not None:
         model.load_state_dict(torch.load(model_path))  
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -89,9 +96,14 @@ def train_on_dataset(save_path, dataset_path, criterion, num_epochs=5, model_pat
     torch.save(model.state_dict(), save_path)
     print("=== Model weights saved ===")
     return
+
+
 def train_on_pixiv(save_path, criterion, num_epochs=5, model_path=None):
     print(f"=== Training on {save_path} ===")
-    model = ViT_Res_patch()  # Assuming ViTModel is already defined.
+    # Create weights folder if it doesn't exist yet
+    if not os.path.exists(os.path.dirname(save_path)):
+        os.makedirs(os.path.dirname(save_path))
+    model = ViT_Res_patch(num_patches=num_patches)  # Assuming ViTModel is already defined.
     if model_path is not None:
         model.load_state_dict(torch.load(model_path))  
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -114,9 +126,14 @@ def train_on_pixiv(save_path, criterion, num_epochs=5, model_path=None):
     torch.save(model.state_dict(), save_path)
     print("=== Model weights saved ===")
     return
+
+
 def train_on_all_dataset(save_path, dataset_paths, criterion, num_epochs=5, model_path=None):
     print(f"=== Training on {save_path} ===")
-    model = ViT_Res_patch()  # Assuming ViTModel is already defined.
+    # Create weights folder if it doesn't exist yet
+    if not os.path.exists(os.path.dirname(save_path)):
+        os.makedirs(os.path.dirname(save_path))
+    model = ViT_Res_patch(num_patches=num_patches)  # Assuming ViTModel is already defined.
     if model_path is not None:
         model.load_state_dict(torch.load(model_path))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -158,36 +175,36 @@ def train_on_all_dataset(save_path, dataset_paths, criterion, num_epochs=5, mode
     print("=== Model weights saved ===")
     return
 
-# import time
-# print("Program will start after 1 hour.")
-# time.sleep(3600)  # Sleep for 3600 seconds (1 hour)
-
-train_on_dataset('16patch/biggan_model.pth', 'resized_images/imagenet_ai_0419_biggan', criterion, num_epochs=3) 
-train_on_dataset('16patch/sdv4_model.pth', 'resized_images/imagenet_ai_0419_sdv4', criterion, num_epochs=3)
-train_on_dataset('16patch/wukong_model.pth', 'resized_images/imagenet_ai_0424_wukong', criterion, num_epochs=3)
-train_on_dataset('16patch/vqdm_model.pth', 'resized_images/imagenet_ai_0419_vqdm', criterion, num_epochs=3)
-train_on_dataset('16patch/glide_model.pth', 'resized_images/imagenet_glide', criterion, num_epochs=3)
-train_on_dataset('16patch/adm_model.pth', 'resized_images/imagenet_ai_0508_adm', criterion, num_epochs=3)
-train_on_dataset('16patch/sdv5_model.pth', 'resized_images/imagenet_ai_0424_sdv5', criterion, num_epochs=3)
-train_on_dataset('16patch/midjourney_model.pth', 'resized_images/imagenet_midjourney', criterion, num_epochs=3)
-train_on_pixiv('16patch/pixiv.pth', criterion, num_epochs=3)
-
-# import time
-# print("Program will start after 1 hour.")
-# time.sleep(3600)  # Sleep for 3600 seconds (1 hour)
-
-# # After 1 hour, execute the rest of the program
-# print("Program has started.")
-
-
-criterion = torch.nn.BCEWithLogitsLoss()
+# Train a model on all GenImage datasets
 path = ['resized_images/imagenet_ai_0419_biggan', 'resized_images/imagenet_ai_0419_sdv4', 'resized_images/imagenet_ai_0424_wukong', 'resized_images/imagenet_ai_0419_vqdm', \
         'resized_images/imagenet_glide', 'resized_images/imagenet_ai_0508_adm', 'resized_images/imagenet_ai_0424_sdv5', 'resized_images/imagenet_midjourney']
-train_on_all_dataset('16patch/all_models.pth', path, criterion, num_epochs=3)
-# train_on_pixiv('./ViT_Res_pixiv/pixiv.pth', criterion, num_epochs=2)
+train_on_all_dataset('{num_patches}patch/all_models.pth', path, criterion, num_epochs=3)
 
-# # Example usage
-root_directory = 'resized_images'
-models_directory = './16patch'
+# Train a model on a each GenImage dataset separately
+train_on_dataset('{num_patches}patch/biggan_model.pth', 'resized_images/imagenet_ai_0419_biggan', criterion, num_epochs=3) 
+train_on_dataset('{num_patches}patch/sdv4_model.pth', 'resized_images/imagenet_ai_0419_sdv4', criterion, num_epochs=3)
+train_on_dataset('{num_patches}patch/wukong_model.pth', 'resized_images/imagenet_ai_0424_wukong', criterion, num_epochs=3)
+train_on_dataset('{num_patches}patch/vqdm_model.pth', 'resized_images/imagenet_ai_0419_vqdm', criterion, num_epochs=3)
+train_on_dataset('{num_patches}patch/glide_model.pth', 'resized_images/imagenet_glide', criterion, num_epochs=3)
+train_on_dataset('{num_patches}patch/adm_model.pth', 'resized_images/imagenet_ai_0508_adm', criterion, num_epochs=3)
+train_on_dataset('{num_patches}patch/sdv5_model.pth', 'resized_images/imagenet_ai_0424_sdv5', criterion, num_epochs=3)
+train_on_dataset('{num_patches}patch/midjourney_model.pth', 'resized_images/imagenet_midjourney', criterion, num_epochs=3)
 
-evaluate_all_ViT_Res_patch(root_directory, models_directory)
+# Example to train on the Pixiv dataset
+# train_on_pixiv('{num_patches}patch/pixiv.pth', criterion, num_epochs=3)
+
+# Example evaluations
+# Evaluate on all models
+# evaluate_all_ViT_Res_patch('resized_images', '{num_patches}patch')
+
+# Evaluate on the Pixiv dataset (only the model trained on all GenImage datasets, in this case)
+model = ViT_Res_patch(num_patches=num_patches)
+model.load_state_dict(torch.load('{num_patches}patch/all_models.pth'))
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = model.to(device)
+evaluate_pixiv(model, device, transform=transforms.Compose([
+    transforms.CenterCrop(224),     # Crop the center of the image
+    transforms.ToTensor(),          # Convert the image to a tensor
+    transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],  # CLIP's specific normalization values
+                         std=[0.26862954, 0.26130258, 0.27577711])
+    ]))
