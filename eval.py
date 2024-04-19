@@ -1,6 +1,7 @@
 import torch
 from torchvision import transforms, datasets, models
 from torch.utils.data import DataLoader
+from baseline_model import BaselineModel
 from ViT_model import ViTModel
 from ViT_Res import ViT_Res
 from ViT_Res_patch import ViT_Res_patch
@@ -12,7 +13,6 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
-import random
 
     
 def find_all_val_dirs(root_dir):
@@ -22,7 +22,6 @@ def find_all_val_dirs(root_dir):
 def load_data(val_dir, transform, batch_size=64):
     """Load validation data from a given directory."""
     dataloader = datasets.ImageFolder(val_dir, transform=transform)
-    # dataloader = torch.utils.data.Subset(dataloader, random.sample(range(len(dataloader)), 1000))
     dataloader = DataLoader(dataloader, batch_size=batch_size, shuffle=False)
     return dataloader
 
@@ -73,6 +72,15 @@ def evaluate(root_dir, model, device, transform):
     # dataloader = torch.utils.data.DataLoader(val_data, batch_size=64, shuffle=False)
     # accuracy = evaluate_dir(model, dataloader, device)
     # print(f"Accuracy for pixiv_transformed: {accuracy:.2f}%")
+
+def evaluate_baseline_model(root_dir, model_path):
+    # Load the model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = BaselineModel()
+    model.load_state_dict(torch.load(model_path))
+    model = model.to(device)
+    transform = model.transforms
+    evaluate(root_dir, model, device, transform)
 
 def evaluate_resnet(root_dir, model_path):
     # Load the model
@@ -141,6 +149,16 @@ def evaluateViT_EfficientNet(root_dir, model_path):
 # root_directory = 'resized_images'
 # model_path = 'baseline_model.pth'
 # evaluate_resnet(root_directory, model_path)
+
+def evaluate_all_baseline_model(root_directory, models_directory):
+    # List all files in the models directory
+    model_files = [f for f in os.listdir(models_directory) if f.endswith('.pth')]
+    
+    # Loop through each model file and evaluate it
+    for model_file in model_files:
+        model_path = os.path.join(models_directory, model_file)
+        print(f"Evaluating model: {model_path}")
+        evaluate_baseline_model(root_directory, model_path)
 
 def evaluate_all_ViT(root_directory, models_directory):
     # List all files in the models directory
