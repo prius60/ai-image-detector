@@ -6,15 +6,29 @@ from torch.nn.utils import spectral_norm
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from PIL import Image
+from tqdm import tqdm
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import average_precision_score
+import glob
 import os
 
-##################################################################################################
+# Use CUDA for acceleration if possible
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
+# Transformations
+transform = transforms.Compose([
+    transforms.Resize((256, 256)),
+    transforms.ToTensor(),
+])
 
+# Model Architecture
 class DenoiseNet(nn.Module):
+    """ Network for detecting noise.
+    """
     def __init__(self):
         super(DenoiseNet, self).__init__()
-        # Define a high-pass filter to enhance high-frequency components
+        # High-pass filter to enhance high-frequency components
         self.high_pass_filter = nn.Conv2d(3, 3, kernel_size=3, padding=1, groups=3, bias=False)
         high_pass_kernel = torch.tensor([[[-1, -1, -1],
                                           [-1, 8, -1],
@@ -38,14 +52,14 @@ class DenoiseNet(nn.Module):
         x = self.pool(self.relu(self.conv3(x)))
         return x
 
-
-# LNP Model integrating DenoiseNet
 class LNPModel(nn.Module):
+    """ LNP Model integrating DenoiseNet.
+    """
     def __init__(self, denoise_net):
         super(LNPModel, self).__init__()
         self.denoise_net = denoise_net
         self.classifier = nn.Sequential(
-            nn.Linear(64 * 32 * 32, 512),  # Adjust the size according to your output
+            nn.Linear(64 * 32 * 32, 512),
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(512, 2),
@@ -61,6 +75,8 @@ class LNPModel(nn.Module):
 
 # Dataset preparation
 class ImageDataset(Dataset):
+    """ Organize and label the data accordingly.
+    """
     def __init__(self, root_dir, transform=None):
         self.root_dir = root_dir
         self.real_images = [os.path.join(root_dir, 'nature', x) for x in os.listdir(os.path.join(root_dir, 'nature'))]
@@ -81,23 +97,33 @@ class ImageDataset(Dataset):
             image = self.transform(image)
 
         return image, label
-    
 
-##################################################################################################
-
-
-# Data Loading
 def load_data(directory):
+    """ Load the data and create batches.
+    """
     dataset = ImageDataset(root_dir=directory, transform=transform)
     loader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
     return loader
 
-# Training Function
-def train_model(loader, model, criterion, optimizer, num_epochs=10):
+
+def find_all_val_dirs(root_dir):
+    """Find all 'val' directories within the root directory."""
+    return glob.glob(os.path.join(root_dir, '**/val'), recursive=True)
+
+
+# Training
+def train_model(loader, val_loader, model, criterion, optimizer, num_epochs=10):
+    """ Train the model based on the specific parameters and calculate the training
+    and validation accuracies after each epoch.
+    """
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        for images, labels in loader:
+        correct_train = 0
+        total_train = 0
+
+        # Training Phase
+        for images, labels in tqdm(loader, desc=f"Epoch {epoch+1}/{num_epochs}", unit="batch"):
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(images)
@@ -105,402 +131,157 @@ def train_model(loader, model, criterion, optimizer, num_epochs=10):
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-            print('training')
-        print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(loader)}')
+            _, predicted = torch.max(outputs.data, 1)
+            total_train += labels.size(0)
+            correct_train += (predicted == labels).sum().item()
 
+        train_accuracy = 100 * correct_train / total_train
 
-##################################################################################################
+        # Validation Phase
+        model.eval()
+        correct_val = 0
+        total_val = 0
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                _, predicted = torch.max(outputs.data, 1)
+                total_val += labels.size(0)
+                correct_val += (predicted == labels).sum().item()
 
+        val_accuracy = 100 * correct_val / total_val
+        print(f'Epoch {epoch+1}/{num_epochs}, Loss: {(running_loss/len(loader)):.4f}, Training Accuracy: {train_accuracy:.2f}%, Validation Accuracy: {val_accuracy:.2f}%')
+        model.train()
 
-# Transformations
-transform = transforms.Compose([
-    transforms.Resize((256, 256)),
-    transforms.ToTensor(),
-])
+def train_models(datasets):
+    """ Train one model for each corresponding dataset.
+    """
+    for dataset in datasets:
+        # Setup Model
+        denoise_net = DenoiseNet().to(device)
+        lnp_model = LNPModel(denoise_net=denoise_net).to(device)
+        optimizer = optim.Adam(lnp_model.parameters(), lr=0.001)
+        criterion = nn.CrossEntropyLoss()
 
-# Model, Loss, and Optimizer
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-denoise_net = DenoiseNet().to(device)
-lnp_model = LNPModel(denoise_net=denoise_net).to(device)
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(lnp_model.parameters(), lr=0.001)
+        # Setup Datasets
+        train_loader = load_data(f'resized_images/imagenet_{dataset}/train')
+        val_loader = load_data(f'resized_images/imagenet_{dataset}/val')
 
+        # Train The Model
+        train_model(train_loader, val_loader, lnp_model, criterion, optimizer)
 
-##################################################################################################
+        # Save only the state dictionary
+        print("=== Saving model weights...===")
+        torch.save(lnp_model.state_dict(), f'lnp_model_{dataset}.pth')
+        print("=== Model weights saved ===")
 
+def train_model_all_datasets(datasets):
+    """ Train one model on all of the datasets.
+    """
+    # Setup Model
+    denoise_net = DenoiseNet().to(device)
+    lnp_model = LNPModel(denoise_net=denoise_net).to(device)
+    optimizer = optim.Adam(lnp_model.parameters(), lr=0.001)
+    criterion = nn.CrossEntropyLoss()
 
-if __name__ == '__main__':
-    train_loader = load_data('imagenet_ai_0419_biggan/train')
-    print('made it here')
-    train_model(train_loader, lnp_model, criterion, optimizer)
+    for dataset in datasets:
+        # Setup Datasets
+        train_loader = load_data(f'resized_images/imagenet_{dataset}/train')
+        val_loader = load_data(f'resized_images/imagenet_{dataset}/val')
+
+        # Train The Model
+        train_model(train_loader, val_loader, lnp_model, criterion, optimizer)
 
     # Save only the state dictionary
     print("=== Saving model weights...===")
-    torch.save(lnp_model.state_dict(), 'lnp_model.pth')
+    torch.save(lnp_model.state_dict(), f'lnp_model_all.pth')
     print("=== Model weights saved ===")
 
-    # # Later to load the state dictionary into the model’s architecture
-    # model = LNPModel(denoise_net=DenoiseNet())  # Recreate the model structure
-    # model.load_state_dict(torch.load('lnp_model.pth'))
-    # model.eval()  # Set the model to evaluation mode
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-# class DenoiseNet(nn.Module):
-#     def __init__(self):
-#         super(DenoiseNet, self).__init__()
-#         # Define a high-pass filter to enhance high-frequency components
-#         self.high_pass_filter = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
-#         self.high_pass_filter.weight.data = torch.tensor([[[[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]]] * 3).float()
-#         # Ensure the high-pass filter does not get updated during training
-#         self.high_pass_filter.weight.requires_grad = False
-        
-#         # Apply spectral normalization to convolutional layers to stabilize their training
-#         self.conv1 = spectral_norm(nn.Conv2d(3, 16, kernel_size=3, padding=1))
-#         self.conv2 = spectral_norm(nn.Conv2d(16, 32, kernel_size=3, padding=2, dilation=2))  # Dilated convolution
-#         self.conv3 = spectral_norm(nn.Conv2d(32, 64, kernel_size=3, padding=4, dilation=4))  # Further dilated convolution
-#         self.pool = nn.MaxPool2d(2, 2)
-#         self.relu = nn.ReLU(inplace=True)
-
-#     def forward(self, x):
-#         # Apply high-pass filtering to enhance high-frequency noise details
-#         x = self.high_pass_filter(x)
-#         x = self.pool(self.relu(self.conv1(x)))
-#         x = self.pool(self.relu(self.conv2(x)))
-#         x = self.pool(self.relu(self.conv3(x)))
-#         return x
-
-
-
-
-# # Define DenoiseNet (simplified version for illustration)
-# class DenoiseNet(nn.Module):
-#     def __init__(self):
-#         super(DenoiseNet, self).__init__()
-#         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-#         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-#         self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-#         self.pool = nn.MaxPool2d(2, 2)
-#         self.relu = nn.ReLU(inplace=True)
-
-#     def forward(self, x):
-#         x = self.pool(self.relu(self.conv1(x)))
-#         x = self.pool(self.relu(self.conv2(x)))
-#         x = self.pool(self.relu(self.conv3(x)))
-#         return x
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# import cv2
-# import numpy as np
-# import torch
-# from torch.utils.data import Dataset
-# from torchvision import datasets, transforms
-# from PIL import Image
-
-# def high_pass_filter(image):
-#     dft = cv2.dft(np.float32(image), flags=cv2.DFT_COMPLEX_OUTPUT)
-#     dft_shift = np.fft.fftshift(dft)
-#     rows, cols = image.shape[:2]
-#     crow, ccol = rows//2, cols//2
-#     # Create a mask with a small central square set to zero (high-pass filter)
-#     mask = np.ones((rows, cols, 2), np.uint8)
-#     mask[crow-30:crow+30, ccol-30:ccol+30] = 0
-#     fshift = dft_shift * mask
-#     f_ishift = np.fft.ifftshift(fshift)
-#     img_back = cv2.idft(f_ishift)
-#     img_back = cv2.magnitude(img_back[:,:,0], img_back[:,:,1])
-#     return img_back
-
-
-# class LNPDataset(Dataset):
-#     def __init__(self, root, transform=None):
-#         self.dataset = datasets.ImageFolder(root=root, transform=transform)
-    
-#     def __getitem__(self, index):
-#         img, label = self.dataset[index]
-#         img = high_pass_filter(np.array(img))  # Apply high-pass filter
-#         img = Image.fromarray(np.uint8(img))   # Convert back to PIL image for further transformations
-#         if self.transform:
-#             img = self.transform(img)
-#         return img, label
-
-#     def __len__(self):
-#         return len(self.dataset)
-
-# transform = transforms.Compose([
-#     transforms.ToTensor(),
-#     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-# ])
-
-
-# import torch.nn as nn
-
-# class SimpleCNN(nn.Module):
-#     def __init__(self):
-#         super(SimpleCNN, self).__init__()
-#         self.features = nn.Sequential(
-#             nn.Conv2d(1, 16, 3, padding=1),  # Input is 1 channel image
-#             nn.ReLU(),
-#             nn.MaxPool2d(2),
-#             nn.Conv2d(16, 32, 3, padding=1),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2),
-#             nn.Conv2d(32, 64, 3, padding=1),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2),
-#         )
-#         self.classifier = nn.Sequential(
-#             nn.Linear(64 * 32 * 32, 128),
-#             nn.ReLU(),
-#             nn.Linear(128, 2),
-#             nn.Softmax(dim=1)
-#         )
-
-#     def forward(self, x):
-#         x = self.features(x)
-#         x = x.view(x.size(0), -1)
-#         x = self.classifier(x)
-#         return x
-
-# def train_model(model, train_loader, val_loader, epochs, device):
-#     criterion = nn.CrossEntropyLoss()
-#     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-#     model.train()
-#     for epoch in range(epochs):
-#         for images, labels in train_loader:
-#             images, labels = images.to(device), labels.to(device)
-#             optimizer.zero_grad()
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-#             loss.backward()
-#             optimizer.step()
-        
-#         # Validation accuracy
-#         correct = 0
-#         total = 0
-#         with torch.no_grad():
-#             for images, labels in val_loader:
-#                 images, labels = images.to(device), labels.to(device)
-#                 outputs = model(images)
-#                 _, predicted = torch.max(outputs.data, 1)
-#                 total += labels.size(0)
-#                 correct += (predicted == labels).sum().item()
-#         print(f'Epoch {epoch+1}, Validation Accuracy: {100 * correct / total}%')
-
-
-# def evaluate_model(model, test_loader, device):
-#     model.eval()
-#     correct = 0
-#     total = 0
-#     with torch.no_grad():
-#         for images, labels in test_loader:
-#             images, labels = images.to(device), labels.to(device)
-#             outputs = model(images)
-#             _, predicted = torch.max(outputs.data, 1)
-#             total += labels.size(0)
-#             correct += (predicted == labels).sum().item()
-#     accuracy = 100 * correct / total
-#     print(f'Test Accuracy: {accuracy}%')
-#     return accuracy
-
-
-
-
-# # Step 1
-# import torch
-# import cv2
-# import numpy as np
-# import torch.nn as nn
-# from torchvision import transforms
-# from torch.utils.data import Dataset, DataLoader
-# import os
-# from PIL import Image
-
-# def high_pass_filter(image):
-#     # Apply DFT to each channel independently
-#     channels = cv2.split(image)
-#     result_channels = []
-#     for channel in channels:
-#         dft = cv2.dft(np.float32(channel), flags=cv2.DFT_COMPLEX_OUTPUT)
-#         dft_shift = np.fft.fftshift(dft)
-
-#         rows, cols = channel.shape
-#         crow, ccol = rows // 2, cols // 2
-
-#         # Create a mask first, center square is 1, remaining all zeros
-#         mask = np.zeros((rows, cols, 2), np.uint8)
-#         r = 30  # Radius of the low frequencies to block
-#         center = [crow, ccol]
-#         x, y = np.ogrid[:rows, :cols]
-#         mask_area = (x - center[0]) ** 2 + (y - center[1]) ** 2 <= r*r
-#         mask[mask_area] = 0
-
-#         # Apply mask and inverse DFT
-#         fshift = dft_shift * mask
-#         f_ishift = np.fft.ifftshift(fshift)
-#         img_back = cv2.idft(f_ishift)
-#         img_back = cv2.magnitude(img_back[:, :, 0], img_back[:, :, 1])
-
-#         # Normalize to 0-255 and convert to uint8
-#         cv2.normalize(img_back, img_back, 0, 255, cv2.NORM_MINMAX)
-#         result_channels.append(img_back)
-
-#     # Merge channels back to a color image
-#     processed_image = cv2.merge(result_channels)
-#     processed_image = np.uint8(processed_image)
-
-#     return processed_image
-
-
-
-
-
-# # Step 2
-# class LNPDataset(Dataset):
-#     def __init__(self, root, transform=None):
-#         super().__init__()
-#         self.root = root
-#         self.transform = transform
-#         self.classes = [d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))]  # Filter to include only directories
-#         self.files = [os.path.join(root, cls, file) for cls in self.classes for file in os.listdir(os.path.join(root, cls)) if not file.startswith('.')]  # Ignore hidden files
-
-#     def __len__(self):
-#         return len(self.files)
-
-#     def __getitem__(self, idx):
-#         file_path = self.files[idx]
-#         label = self.classes.index(os.path.basename(os.path.dirname(file_path)))
-#         img = Image.open(file_path).convert('RGB')
-#         img = np.array(img)
-#         img = high_pass_filter(img)  # Apply your high-pass filter here
-#         img = Image.fromarray(np.uint8(img))  # Convert back to PIL image for further transformations
-#         if self.transform:
-#             img = self.transform(img)
-#         return img, label
-    
-
-# # Step 3
-# class SimpleCNN(nn.Module):
-#     def __init__(self):
-#         super(SimpleCNN, self).__init__()
-#         self.features = nn.Sequential(
-#             nn.Conv2d(1, 16, 3, padding=1),  # Input is 1 channel image
-#             nn.ReLU(),
-#             nn.MaxPool2d(2),
-#             nn.Conv2d(16, 32, 3, padding=1),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2),
-#             nn.Conv2d(32, 64, 3, padding=1),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2),
-#         )
-#         self.classifier = nn.Sequential(
-#             nn.Linear(64 * 32 * 32, 128),
-#             nn.ReLU(),
-#             nn.Linear(128, 2),
-#             nn.Softmax(dim=1)
-#         )
-
-#     def forward(self, x):
-#         x = self.features(x)
-#         x = x.view(x.size(0), -1)
-#         x = self.classifier(x)
-#         return x
-    
-
-# # Step 4
-# def train_model(model, train_loader, val_loader, epochs, device):
-#     criterion = nn.CrossEntropyLoss()
-#     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-#     model.train()
-#     for epoch in range(epochs):
-#         for images, labels in train_loader:
-#             images, labels = images.to(device), labels.to(device)
-#             optimizer.zero_grad()
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-#             loss.backward()
-#             optimizer.step()
-        
-#         # Validation accuracy
-#         correct = 0
-#         total = 0
-#         with torch.no_grad():
-#             for images, labels in val_loader:
-#                 images, labels = images.to(device), labels.to(device)
-#                 outputs = model(images)
-#                 _, predicted = torch.max(outputs.data, 1)
-#                 total += labels.size(0)
-#                 correct += (predicted == labels).sum().item()
-#         print(f'Epoch {epoch+1}, Validation Accuracy: {100 * correct / total}%')
-
-
-# # Step 5
-# def evaluate_model(model, test_loader, device):
-#     model.eval()
-#     correct = 0
-#     total = 0
-#     with torch.no_grad():
-#         for images, labels in test_loader:
-#             images, labels = images.to(device), labels.to(device)
-#             outputs = model(images)
-#             _, predicted = torch.max(outputs.data, 1)
-#             total += labels.size(0)
-#             correct += (predicted == labels).sum().item()
-#     accuracy = 100 * correct / total
-#     print(f'Test Accuracy: {accuracy}%')
-#     return accuracy
-
-
-
-# transform = transforms.Compose([
-#     transforms.Resize((256, 256)),
-#     transforms.ToTensor(),
-#     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-# ])
-
-# # Set the paths
-# train_dir = '/Users/raine/Desktop/datasets/resized_images/imagenet_ai_0419_biggan/train'
-# val_dir = '/Users/raine/Desktop/datasets/resized_images/imagenet_ai_0419_biggan/val'
-
-# train_dataset = LNPDataset(train_dir, transform=transform)
-# val_dataset = LNPDataset(val_dir, transform=transform)
-
-# train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-# val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
-
-
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# model = SimpleCNN().to(device)
-
-# # Define the training function here
-# # Assume train_model function is defined as described earlier
-
-# train_model(model, train_loader, val_loader, epochs=10, device=device)
-
+# Evaluate the model on the validation data
+def evaluate_dir(model, dataloader, device):
+    """ Evaluate the model on the given data.
+    """
+    model.eval()
+    correct = 0
+    total = 0
+    predictions = []
+    label_list = []
+
+    with torch.no_grad():
+        for images, labels in tqdm(dataloader, unit="batch"):
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            _, predicted = torch.max(outputs.data, 1)
+            predictions.extend(predicted.cpu().numpy())
+            label_list.extend(labels.cpu().numpy())
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    accuracy = 100 * correct / total
+    ruc = roc_auc_score(label_list, predictions)
+    ap = average_precision_score(label_list, predictions)
+    print(f"ROC AUC: {ruc:.2f}")
+    print(f"Average Precision: {ap:.2f}")
+ 
+    return accuracy
+
+def evaluate(root_dir, model, device):
+    """ Evaluate the model on each validation set.
+    """
+    # Find all validation directories
+    val_dirs = find_all_val_dirs(root_dir)
+    total_accuracy = 0
+
+    # Evaluate model on each validation directory
+    for val_dir in val_dirs:
+        print(f"Evaluating on {val_dir}")
+        dataloader = load_data(val_dir)
+        accuracy = evaluate_dir(model, dataloader, device)
+        print(f"Accuracy for {val_dir}: {accuracy:.2f}%")
+        total_accuracy += accuracy
+
+    # report total accuracy
+    total_accuracy = total_accuracy / len(val_dirs)
+    print(f"Total accuracy: {total_accuracy:.2f}%")
+
+def evaluateLNP_model(root_dir, model_path):
+    """ Evaluate the model using the saved weights.
+    """
+    # Load the model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    denoise_net = DenoiseNet()
+    model = LNPModel(denoise_net=denoise_net)
+    model.load_state_dict(torch.load(model_path))
+    denoise_net.to(device)
+    model = model.to(device)
+    evaluate(root_dir, model, device)
+
+def evaluate_all_LNP_models(root_directory, models_directory):
+    """ Evaluate each model we have already trained.
+    """
+    # List all files in the models directory
+    model_files = [f for f in os.listdir(models_directory) if f.endswith('.pth')]
+
+    # Loop through each model file and evaluate it
+    for model_file in model_files:
+        model_path = os.path.join(models_directory, model_file)
+        print(f"Evaluating model: {model_path}")
+        evaluateLNP_model(root_directory, model_path)
+
+
+if __name__ == '__main__':
+    # Datasets
+    datasets = ['ai_0419_biggan', 'ai_0419_sdv4', 'ai_0419_vqdm', 'ai_0424_sdv5',
+                'ai_0424_wukong', 'ai_0508_adm', 'glide', 'midjourney']
+
+    # Training
+    # train_models(datasets)  # Train one model for each dataset
+    # train_model_all_datasets(datasets) # Train a model for all datasets
+
+    # # Evaluation
+    # root_directory = 'resized_images'
+    # models_directory = './'
+    # evaluate_all_LNP_models(root_directory, models_directory)
+
+    evaluateLNP_model('resized_images', 'lnp_model_all.pth')
