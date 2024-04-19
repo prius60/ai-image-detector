@@ -125,17 +125,27 @@ def train_on_all_dataset(save_path, dataset_paths, criterion, num_epochs=5, mode
     return
 
 
-# Train on all GenImage datasets
+# Train a model on all GenImage datasets
 path = ['resized_images/imagenet_ai_0419_biggan', 'resized_images/imagenet_ai_0419_sdv4', 'resized_images/imagenet_ai_0424_wukong', 'resized_images/imagenet_ai_0419_vqdm', \
         'resized_images/imagenet_glide', 'resized_images/imagenet_ai_0508_adm', 'resized_images/imagenet_ai_0424_sdv5', 'resized_images/imagenet_midjourney']
-train_on_all_dataset('./baseline_model.pth', path, criterion, num_epochs=1)
+train_on_all_dataset('baseline_model/all_models.pth', path, criterion, num_epochs=1)
 
-# Evaluate on GenImage's validation datasets
-evaluate_baseline_model('resized_images', './baseline_model.pth')
+# Train a model on a each GenImage dataset separately
+train_on_dataset('baseline_model/midjourney_model.pth', 'resized_images/imagenet_midjourney', criterion, num_epochs=3)
+train_on_dataset('baseline_model/sdv5_model.pth', 'resized_images/imagenet_ai_0424_sdv5', criterion, num_epochs=3)
+train_on_dataset('baseline_model/glide_model.pth', 'resized_images/imagenet_glide', criterion, num_epochs=3)
+train_on_dataset('baseline_model/adm_model.pth', 'resized_images/imagenet_ai_0508_adm', criterion, num_epochs=3)
+train_on_dataset('baseline_model/vqdm_model.pth', 'resized_images/imagenet_ai_0419_vqdm', criterion, num_epochs=3)
+train_on_dataset('baseline_model/wukong_model.pth', 'resized_images/imagenet_ai_0424_wukong', criterion, num_epochs=3)
+train_on_dataset('baseline_model/sdv4_model.pth', 'resized_images/imagenet_ai_0419_sdv4', criterion, num_epochs=3)
+train_on_dataset('baseline_model/biggan_model.pth', 'resized_images/imagenet_ai_0419_biggan', criterion, num_epochs=3) 
 
-# Evaluate on the Pixiv dataset
-model = BaselineModel()
-model.load_state_dict(torch.load('./baseline_model.pth'))
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = model.to(device)
-evaluate_pixiv(model, device, transform=BaselineModel().transforms)
+# Evaluate on all models
+# evaluate_all_baseline_model('resized_images', 'baseline_model')
+
+# Evaluate on the Pixiv dataset (only the model trained on all GenImage datasets, in this case)
+# model = BaselineModel()
+# model.load_state_dict(torch.load('baseline_model/baseline_model.pth'))
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# model = model.to(device)
+# evaluate_pixiv(model, device, transform=BaselineModel().transforms)
