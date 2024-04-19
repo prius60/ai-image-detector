@@ -161,15 +161,16 @@ def train_on_all_dataset(save_path, dataset_paths, criterion, num_epochs=5, mode
 # import time
 # print("Program will start after 1 hour.")
 # time.sleep(3600)  # Sleep for 3600 seconds (1 hour)
-# train_on_dataset('ViT_Res_weights3/midjourney_model.pth', 'resized_images/imagenet_midjourney', criterion, num_epochs=3)
-# train_on_dataset('ViT_Res_weights3/sdv5_model.pth', 'resized_images/imagenet_ai_0424_sdv5', criterion, num_epochs=3)
-# train_on_dataset('ViT_Res_weights3/glide_model.pth', 'resized_images/imagenet_glide', criterion, num_epochs=3)
-# train_on_dataset('ViT_Res_weights3/adm_model.pth', 'resized_images/imagenet_ai_0508_adm', criterion, num_epochs=3)
-# train_on_dataset('ViT_Res_weights3/vqdm_model.pth', 'resized_images/imagenet_ai_0419_vqdm', criterion, num_epochs=3)
-# train_on_dataset('ViT_Res_weights3/wukong_model.pth', 'resized_images/imagenet_ai_0424_wukong', criterion, num_epochs=3)
-train_on_dataset('ViT_Res_patch/sdv4_model.pth', 'resized_images/imagenet_ai_0419_sdv4', criterion, num_epochs=2)
-# train_on_dataset('ViT_Res_weights3/biggan_model.pth', 'resized_images/imagenet_ai_0419_biggan', criterion, num_epochs=3) 
 
+train_on_dataset('16patch/biggan_model.pth', 'resized_images/imagenet_ai_0419_biggan', criterion, num_epochs=3) 
+train_on_dataset('16patch/sdv4_model.pth', 'resized_images/imagenet_ai_0419_sdv4', criterion, num_epochs=3)
+train_on_dataset('16patch/wukong_model.pth', 'resized_images/imagenet_ai_0424_wukong', criterion, num_epochs=3)
+train_on_dataset('16patch/vqdm_model.pth', 'resized_images/imagenet_ai_0419_vqdm', criterion, num_epochs=3)
+train_on_dataset('16patch/glide_model.pth', 'resized_images/imagenet_glide', criterion, num_epochs=3)
+train_on_dataset('16patch/adm_model.pth', 'resized_images/imagenet_ai_0508_adm', criterion, num_epochs=3)
+train_on_dataset('16patch/sdv5_model.pth', 'resized_images/imagenet_ai_0424_sdv5', criterion, num_epochs=3)
+train_on_dataset('16patch/midjourney_model.pth', 'resized_images/imagenet_midjourney', criterion, num_epochs=3)
+train_on_pixiv('16patch/pixiv.pth', criterion, num_epochs=3)
 
 # import time
 # print("Program will start after 1 hour.")
@@ -182,11 +183,11 @@ train_on_dataset('ViT_Res_patch/sdv4_model.pth', 'resized_images/imagenet_ai_041
 criterion = torch.nn.BCEWithLogitsLoss()
 path = ['resized_images/imagenet_ai_0419_biggan', 'resized_images/imagenet_ai_0419_sdv4', 'resized_images/imagenet_ai_0424_wukong', 'resized_images/imagenet_ai_0419_vqdm', \
         'resized_images/imagenet_glide', 'resized_images/imagenet_ai_0508_adm', 'resized_images/imagenet_ai_0424_sdv5', 'resized_images/imagenet_midjourney']
-# train_on_all_dataset('./ViT_Res_weights2/all_models.pth', path, criterion, num_epochs=1)
-# train_on_pixiv('./ViT_Res_pixiv/pixiv.pth', criterion, num_epochs=1)
+train_on_all_dataset('16patch/all_models.pth', path, criterion, num_epochs=3)
+# train_on_pixiv('./ViT_Res_pixiv/pixiv.pth', criterion, num_epochs=2)
 
 # # Example usage
 root_directory = 'resized_images'
-models_directory = './ViT_Res_patch'
+models_directory = './16patch'
 
 evaluate_all_ViT_Res_patch(root_directory, models_directory)
